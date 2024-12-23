@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>楼梯高度计算器（实时版）</title>
+    <!-- 引入 Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+
+<body class="min-h-screen bg-gray-100 p-4">
+    <div class="max-w-md mx-auto bg-white rounded-md shadow p-4">
+        <!-- 标题 -->
+        <h1 class="text-xl font-bold mb-4 text-center">楼梯高度计算器</h1>
+
+        <!-- 说明文字 -->
+        <p class="text-sm text-gray-700 mb-4 leading-relaxed">
+            本页面的“楼梯高度差”指的是<em>相邻两台阶之间的高度差</em>。<br />
+            在“自下而上挤占”算法下，如果下层加高，就会<em>向上</em>“借”高度，使得原本更高的楼梯被动缩短；反之亦然。<br />
+            调整结果会直接显示在「施工量」列中，表示对该节实际需要加（+）或减（-）的量。
+        </p>
+
+        <!-- 表格： 序号 / 当前高度差 / 施工量 / 操作 -->
+        <div class="overflow-x-auto mb-4">
+            <table class="table-auto w-full border-collapse text-sm">
+                <thead>
+                    <tr class="bg-gray-100 border-b">
+                        <th class="px-2 py-2 text-left">序号</th>
+                        <th class="px-2 py-2 text-left">当前高度差</th>
+                        <th class="px-2 py-2 text-left">施工量</th>
+                        <th class="px-2 py-2 text-left">操作</th>
+                    </tr>
+                </thead>
+                <tbody id="stairTableBody">
+                    <!-- 动态插入 -->
+                </tbody>
+            </table>
+        </div>
+
+        <!-- 显示：平均高度差 -->
+        <div class="mt-4 p-4 bg-gray-50 rounded-md text-sm flex items-center justify-between">
+            <span class="font-semibold">平均高度差：</span>
+            <span class="text-blue-600 font-bold" id="avgLabel">0.00 cm</span>
+        </div>
+
+        <!-- 语言选择器 -->
+        <div class="mt-4 text-sm text-gray-600 text-center">
+            <label for="language" class="mr-2">Language:</label>
+            <select id="language" class="border rounded px-2 py-1" onchange="changeLanguage(this.value)">
+                <option value="zh">中文</option>
+                <option value="en">English</option>
+                <option value="es">Español</option>
+                <option value="de">Deutsch</option>
+                <option value="fr">Français</option>
+                <option value="pt">Português</option>
+            </select>
+        </div>
+    </div>
+
+    <script>
+        // stairs[i] 表示第 i 节楼梯（相邻两台阶）的“高度差”
+        // 默认先给 1 节楼梯，height=0
+        let stairs = [
+            { height: 0 }
+        ];
+
+        document.addEventListener('DOMContentLoaded', () => {
+            // 首次渲染表格
+            renderTable();
+            // 计算并更新
+            updateAll();
+        });
+
+        // 渲染表格：每次都重建 <tbody> 内容
+        //  - 第1列：序号
+        //  - 第2列：当前高度差（可输入）
+        //  - 第3列：施工量（算法实时计算）
+        //  - 第4列：操作按钮
+        function renderTable() {
+            const tbody = document.getElementById('stairTableBody');
+            tbody.innerHTML = '';
+
+            stairs.forEach((item, idx) => {
+                const tr = document.createElement('tr');
+                tr.className = 'border-b hover:bg-gray-50';
+
+                // (1) 序号
+                const tdIndex = document.createElement('td');
+                tdIndex.className = 'px-2 py-2';
+                tdIndex.textContent = (idx + 1);
+                tr.appendChild(tdIndex);
+
+                // (2) 当前高度差 (input)
+                const tdHeight = document.createElement('td');
+                tdHeight.className = 'px-2 py-2';
+                const input = document.createElement('input');
+                input.type = 'number';
+                input.className = 'border rounded-md px-2 py-1 w-24';
+                input.value = item.height;
+                // 当用户输入后，更新 stairs，并触发更新
+                input.addEventListener('input', () => {
+                    stairs[idx].height = parseFloat(input.value) || 0;
+                    updateAll(); // 实时更新
+                });
+                tdHeight.appendChild(input);
+                tr.appendChild(tdHeight);
+
+                // (3) 施工量
+                const tdAction = document.createElement('td');
+                tdAction.className = 'px-2 py-2';
+                // 用一个 span 来显示施工量
+                const spanAction = document.createElement('span');
+                spanAction.id = `action-${idx}`; // 为了后续更新
+                tdAction.appendChild(spanAction);
+                tr.appendChild(tdAction);
+
+                // (4) 操作按钮
+                const tdOps = document.createElement('td');
+                tdOps.className = 'px-2 py-2 flex space-x-1'; // 使用 flex 布局，减小间距
+                
+                // 添加按钮
+                const addBtn = document.createElement('button');
+                addBtn.textContent = '+';
+                addBtn.className = 'w-5 h-5 rounded-full bg-green-100 text-green-600 hover:bg-green-200 flex items-center justify-center font-bold text-sm';
+                addBtn.addEventListener('click', () => {
+                    stairs.splice(idx + 1, 0, { height: 0 });
+                    renderTable();
+                    updateAll();
+                });
+                
+                // 删除按钮
+                const delBtn = document.createElement('button');
+                delBtn.textContent = '−'; // 使用减号符号 (U+2212)
+                delBtn.className = 'w-5 h-5 rounded-full bg-red-100 text-red-600 hover:bg-red-200 flex items-center justify-center font-bold text-sm';
+                delBtn.addEventListener('click', () => {
+                    if (stairs.length > 1) {
+                        stairs.splice(idx, 1);
+                        renderTable();
+                        updateAll();
+                    }
+                });
+                
+                tdOps.appendChild(addBtn);
+                tdOps.appendChild(delBtn);
+                tr.appendChild(tdOps);
+
+                tbody.appendChild(tr);
+            });
+        }
+
+        // 每次输入变化，统一刷新：平均值 & 每节施工量
+        function updateAll() {
+            // 1) 计算并更新平均值
+            const avg = calcAverage();
+            document.getElementById('avgLabel').textContent = avg.toFixed(2) + ' cm';
+
+            // 2) 根据“自下而上挤占”算法，计算每节施工量
+            const record = computeAdjustments(avg);
+
+            // 3) 将施工量显示到表格
+            record.forEach((val, idx) => {
+                const span = document.getElementById(`action-${idx}`);
+                if (span) {
+                    span.textContent = formatNumber(val) + ' cm';
+                }
+            });
+        }
+
+        // 计算平均值
+        function calcAverage() {
+            if (stairs.length === 0) return 0;
+            let sum = 0;
+            stairs.forEach(s => sum += s.height);
+            return sum / stairs.length;
+        }
+
+        /**
+         * “自下而上挤占”算法
+         * - 依次让第 i 节变成 avg
+         * - 多/少出来的量挤到下一节
+         * - 返回 record[i] 表示对第 i 节施工量
+         */
+        function computeAdjustments(avg) {
+            const n = stairs.length;
+            const record = new Array(n).fill(0);
+
+            // 拷贝一份数据，不要直接改用户输入
+            const tmp = stairs.map(s => s.height);
+
+            for (let i = 0; i < n; i++) {
+                const current = tmp[i];
+                const delta = avg - current; // 这一节与平均值的差
+                record[i] = delta;          // 本节要加(或减)多少
+                tmp[i] = avg;               // 调整后，这一节就到 avg
+                if (i < n - 1) {
+                    // 把 delta 挤给下一节
+                    // 如果 delta>0，表示我从下一节“借”了 delta
+                    // 下一节就减少 delta；反之亦然
+                    tmp[i + 1] = tmp[i + 1] - delta;
+                }
+            }
+            return record;
+        }
+
+        // 格式化数值：带正负号，保留两位小数
+        function formatNumber(num) {
+            if (num > 0) {
+                return `+${num.toFixed(2)}`;
+            } else if (num < 0) {
+                return num.toFixed(2);
+            } else {
+                return '0.00';
+            }
+        }
+
+        // 添加翻译字典
+        const translations = {
+            zh: {
+                title: '楼梯高度计算器',
+                description: '本页面的"楼梯高度差"指的是<em>相邻两台阶之间的高度差</em>。<br />在"自下而上挤占"算法下，如果下层加高，就会<em>向上</em>"借"高度，使得原本更高的楼梯被动缩短；反之亦然。<br />调整结果会直接显示在「施工量」列中，表示对该节实际需要加（+）或减（-）的量。',
+                colIndex: '序号',
+                colHeight: '当前高度差',
+                colAdjustment: '施工量',
+                colActions: '操作',
+                avgHeight: '平均高度差：'
+            },
+            en: {
+                title: 'Stair Height Calculator',
+                description: 'The "stair height difference" refers to the <em>height difference between adjacent steps</em>.<br />Under the "bottom-up occupation" algorithm, if the lower level is raised, it will "borrow" height <em>upward</em>, passively shortening the originally higher stairs; and vice versa.<br />The adjustment results are shown directly in the "Construction Amount" column, indicating the amount to be added (+) or subtracted (-) for each section.',
+                colIndex: 'No.',
+                colHeight: 'Current Height',
+                colAdjustment: 'Adjustment',
+                colActions: 'Actions',
+                avgHeight: 'Average Height:'
+            },
+            es: {
+                title: 'Calculadora de Altura de Escaleras',
+                description: 'La "diferencia de altura" se refiere a la <em>diferencia de altura entre peldaños adyacentes</em>.<br />Bajo el algoritmo de "ocupación ascendente", si se eleva el nivel inferior, "tomará prestada" altura <em>hacia arriba</em>, acortando pasivamente las escaleras más altas; y viceversa.<br />Los resultados del ajuste se muestran directamente en la columna "Cantidad de Construcción", indicando la cantidad a agregar (+) o restar (-) para cada sección.',
+                colIndex: 'N°',
+                colHeight: 'Altura Actual',
+                colAdjustment: 'Ajuste',
+                colActions: 'Acciones',
+                avgHeight: 'Altura Promedio:'
+            },
+            // ... 可以继续添加其他语言的翻译 ...
+        };
+
+        // 语言切换函数
+        function changeLanguage(lang) {
+            const t = translations[lang] || translations.en;
+            
+            // 更新标题
+            document.querySelector('h1').textContent = t.title;
+            
+            // 更新说明文字
+            document.querySelector('p').innerHTML = t.description;
+            
+            // 更新表头
+            const headers = document.querySelectorAll('thead th');
+            headers[0].textContent = t.colIndex;
+            headers[1].textContent = t.colHeight;
+            headers[2].textContent = t.colAdjustment;
+            headers[3].textContent = t.colActions;
+            
+            // 更新平均高度标签
+            document.querySelector('.font-semibold').textContent = t.avgHeight;
+            
+            // 重新渲染表格以更新内容
+            renderTable();
+        }
+    </script>
+</body>
+
+</html>
